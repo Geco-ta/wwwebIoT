@@ -33,11 +33,11 @@ const createDebounce = (delay: number) => {
 const debounce = createDebounce(100); // 100ms debounce untuk stability
 
 /**
- * Subscribe to current sensor readings dengan debouncing
+ * Subscribe to current sensor readings dengan timestamp
  */
 export function subscribeToSensorCurrent(
 	sensorKey: SensorKey,
-	onUpdate: (value: number) => void,
+	onUpdate: (value: number, timestamp: number) => void,
 	onError: (error: Error) => void
 ) {
 	try {
@@ -48,8 +48,9 @@ export function subscribeToSensorCurrent(
 				if (snapshot.exists()) {
 					const data = snapshot.val() as any;
 					const value = data.value ?? 0;
+					const timestamp = data.timestamp ?? Date.now();
 					// Gunakan debounce untuk mengurangi update frequency
-					debounce(`sensor-${sensorKey}`, () => onUpdate(value));
+					debounce(`sensor-${sensorKey}`, () => onUpdate(value, timestamp));
 				}
 			},
 			(error: any) => onError(error as Error)
@@ -62,7 +63,7 @@ export function subscribeToSensorCurrent(
 }
 
 /**
- * Subscribe to sensor time series data dengan optimization untuk data besar
+ * Subscribe to sensor time series data dengan filter 12 jam terakhir
  */
 export function subscribeSensorTimeSeries(
 	sensorKey: SensorKey,
@@ -76,10 +77,18 @@ export function subscribeSensorTimeSeries(
 			(snapshot) => {
 				if (snapshot.exists()) {
 					const data = snapshot.val() as any;
-					const points = Array.isArray(data) ? data : Object.values(data || {});
+					const allPoints = Array.isArray(data) ? data : Object.values(data || {});
+					
+					// Filter data dari 12 jam terakhir
+					const now = Date.now();
+					const twelveHoursAgo = now - 12 * 60 * 60 * 1000;
+					const filteredPoints = (allPoints as Array<{ timestamp: number; value: number }>)
+						.filter(p => p.timestamp >= twelveHoursAgo)
+						.sort((a, b) => a.timestamp - b.timestamp);
+					
 					// Hanya kirim update jika ada perubahan data
 					debounce(`series-${sensorKey}`, () => {
-						onUpdate(points as Array<{ timestamp: number; value: number }>);
+						onUpdate(filteredPoints);
 					});
 				}
 			},

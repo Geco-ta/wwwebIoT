@@ -5,6 +5,11 @@ export interface SensorPoint {
 	value: number;
 }
 
+export interface CurrentSensor {
+	value: number;
+	timestamp: number; // untuk detect ESP online/offline
+}
+
 export type SensorSeries = Record<SensorKey, SensorPoint[]>;
 
 export type ActuatorKey = 'lamp' | 'fan' | 'pump';
@@ -21,9 +26,10 @@ export interface ControlMode {
 
 export interface DashboardState {
 	series: SensorSeries;
-	current: Record<SensorKey, number>;
+	current: Record<SensorKey, CurrentSensor>;
 	mode: ControlMode['mode'];
 	actuators: Record<ActuatorKey, ActuatorState>;
+	connectionStatus: 'connected' | 'disconnected';
 }
 
 

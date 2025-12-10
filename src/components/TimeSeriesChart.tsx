@@ -55,15 +55,14 @@ const TimeSeriesChart = memo(function TimeSeriesChart({ title, series }: Props) 
 		return { data, allTs };
 	}, [series]);
 
-	// Memoize hourly lines calculation
+	// Memoize hourly lines calculation - 12 jam ke belakang dari sekarang
 	const { hourlyLines, start, end } = useMemo(() => {
-		const allTs = chartData.allTs;
-		const minTimestamp = allTs.length > 0 ? Math.min(...allTs) : Date.now();
-		const start = minTimestamp;
-		const end = start + 12 * 60 * 60 * 1000;
+		const now = Date.now();
+		const start = now - 12 * 60 * 60 * 1000; // 12 jam yang lalu
+		const end = now; // sekarang
 		const hourlyLines = Array.from({ length: 13 }, (_, i) => start + i * 60 * 60 * 1000);
 		return { hourlyLines, start, end };
-	}, [chartData.allTs]);
+	}, []);
 
 	// Memoize color detection
 	const { gridColor, axisColor, refLineColor } = useMemo(() => {
@@ -110,7 +109,7 @@ const TimeSeriesChart = memo(function TimeSeriesChart({ title, series }: Props) 
 								x={timestamp}
 								stroke={refLineColor}
 								strokeDasharray="4 4"
-								opacity={0.6}
+								opacity={1}
 							/>
 						))}
 						{series.map(s => (
@@ -130,7 +129,7 @@ const TimeSeriesChart = memo(function TimeSeriesChart({ title, series }: Props) 
 					</LineChart>
 				</ResponsiveContainer>
 			</div>
-			<div className="subtitle" style={{ marginTop: 12, marginBottom: 0 }}>12 jam dari data pertama • Per menit</div>
+			<div className="subtitle" style={{ marginTop: 12, marginBottom: 0 }}>12 jam terakhir • Data real-time</div>
 		</div>
 	);
 });

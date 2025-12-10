@@ -48,11 +48,12 @@ function randn(mu = 0, sigma = 1) {
 export function createInitialDashboardState(): DashboardState {
 	const series = generateInitialSeries();
 	const lastIdx = series.light.length - 1;
+	const now = Date.now();
 	const current = {
-		light: series.light[lastIdx].value,
-		airHumidity: series.airHumidity[lastIdx].value,
-		soilMoisture: series.soilMoisture[lastIdx].value,
-		airTemp: series.airTemp[lastIdx].value
+		light: { value: series.light[lastIdx].value, timestamp: now },
+		airHumidity: { value: series.airHumidity[lastIdx].value, timestamp: now },
+		soilMoisture: { value: series.soilMoisture[lastIdx].value, timestamp: now },
+		airTemp: { value: series.airTemp[lastIdx].value, timestamp: now }
 	};
 	const actuators: Record<ActuatorKey, ActuatorState> = {
 		lamp: { key: 'lamp', name: 'Lampu', isOn: false },
@@ -63,7 +64,8 @@ export function createInitialDashboardState(): DashboardState {
 		series,
 		current,
 		mode: 'auto',
-		actuators
+		actuators,
+		connectionStatus: 'connected'
 	};
 }
 
@@ -72,7 +74,7 @@ export function advanceOneMinute(state: DashboardState): DashboardState {
 	const now = Date.now();
 	(['light', 'airHumidity', 'soilMoisture', 'airTemp'] as SensorKey[]).forEach((key) => {
 		const arr = next.series[key].slice(1); // drop oldest
-		let base = next.current[key];
+		let base = next.current[key].value;
 		// add small random walk
 		if (key === 'light') {
 			const hour = new Date(now).getHours();
@@ -88,13 +90,13 @@ export function advanceOneMinute(state: DashboardState): DashboardState {
 		const point: SensorPoint = { timestamp: now, value: Number(base.toFixed(2)) };
 		arr.push(point);
 		next.series[key] = arr;
-		next.current[key] = point.value;
+		next.current[key] = { value: point.value, timestamp: now };
 	});
 	// simple auto-control heuristic (placeholder for real backend rules)
 	if (next.mode === 'auto') {
-		next.actuators.lamp.isOn = next.current.light < 20;
-		next.actuators.fan.isOn = next.current.airTemp > 30 || next.current.airHumidity > 80;
-		next.actuators.pump.isOn = next.current.soilMoisture < 30;
+		next.actuators.lamp.isOn = next.current.light.value < 20;
+		next.actuators.fan.isOn = next.current.airTemp.value > 30 || next.current.airHumidity.value > 80;
+		next.actuators.pump.isOn = next.current.soilMoisture.value < 30;
 	}
 	return next;
 }

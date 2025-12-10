@@ -82,15 +82,52 @@ export default function App() {
 			console.error('Firebase subscription error:', error);
 		};
 
+		// Check data staleness setiap 1 detik - jika > 1 menit tidak update = disconnect & set 0
+		const staleCheckInterval = window.setInterval(() => {
+			setState(prev => {
+				const now = Date.now();
+				const oneMinuteAgo = now - 60 * 1000;
+				let updated = { ...prev };
+				let hasStaleData = false;
+				let isDisconnected = true;
+
+				(['light', 'airHumidity', 'soilMoisture', 'airTemp'] as SensorKey[]).forEach(key => {
+					const lastTimestamp = prev.current[key].timestamp;
+					if (lastTimestamp < oneMinuteAgo) {
+						// Data lebih dari 1 menit tidak terupdate
+						updated.current[key] = { value: 0, timestamp: lastTimestamp };
+						hasStaleData = true;
+					} else {
+						// Ada data yang masih fresh = still connected
+						isDisconnected = false;
+					}
+				});
+
+				// Jika disconnect - set semua series jadi kosong
+				if (isDisconnected && prev.connectionStatus === 'connected') {
+					updated.connectionStatus = 'disconnected';
+					(['light', 'airHumidity', 'soilMoisture', 'airTemp'] as SensorKey[]).forEach(key => {
+						updated.series[key] = [];
+					});
+					hasStaleData = true;
+				} else if (!isDisconnected && prev.connectionStatus === 'disconnected') {
+					// Jika reconnect
+					updated.connectionStatus = 'connected';
+					hasStaleData = true;
+				}
+
+				return hasStaleData ? updated : prev;
+			});
+		}, 1000);
+
 		// Subscribe to sensor current values
 		sensorKeys.forEach(key => {
 			const unsubscribe = subscribeToSensorCurrent(
 				key,
-				(value) => {
-					// Direct update untuk responsiveness (batching hanya untuk multiple updates)
+				(value, timestamp) => {
 					setState(prev => ({
 						...prev,
-						current: { ...prev.current, [key]: value }
+						current: { ...prev.current, [key]: { value, timestamp } }
 					}));
 				},
 				handleError
@@ -148,6 +185,7 @@ export default function App() {
 			unsubscribesRef.current.forEach(unsub => unsub());
 			unsubscribesRef.current = [];
 			if (batchTimerRef.current) window.clearTimeout(batchTimerRef.current);
+			if (staleCheckInterval) window.clearInterval(staleCheckInterval);
 		};
 	}, []);
 
@@ -228,17 +266,17 @@ export default function App() {
 						<div style={{ 
 							fontSize: 11, 
 							fontWeight: 600, 
-							color: 'var(--ok)',
+							color: state.connectionStatus === 'connected' ? 'var(--ok)' : 'var(--danger)',
 							display: 'flex',
 							alignItems: 'center',
 							gap: 6,
 							padding: '4px 8px',
-							background: 'rgba(16, 185, 129, 0.1)',
-							border: '1px solid rgba(16, 185, 129, 0.3)',
+							background: state.connectionStatus === 'connected' ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+							border: state.connectionStatus === 'connected' ? '1px solid rgba(16, 185, 129, 0.3)' : '1px solid rgba(239, 68, 68, 0.3)',
 							borderRadius: 6
 						}}>
-							<span style={{ width: 6, height: 6, background: 'var(--ok)', borderRadius: '50%', display: 'inline-block' }}></span>
-							Connected
+							<span style={{ width: 6, height: 6, background: state.connectionStatus === 'connected' ? 'var(--ok)' : 'var(--danger)', borderRadius: '50%', display: 'inline-block' }}></span>
+							{state.connectionStatus === 'connected' ? 'Connected' : 'Disconnected'}
 						</div>
 					)}
 					{!USE_FIREBASE && (
@@ -266,7 +304,7 @@ export default function App() {
 
 			<div className="grid" style={{ marginBottom: 24 }}>
 				{sensorOrder.map((k) => (
-					<SensorCard key={k} sensor={k} value={state.current[k]} />
+					<SensorCard key={k} sensor={k} value={state.current[k].value} />
 				))}
 			</div>
 

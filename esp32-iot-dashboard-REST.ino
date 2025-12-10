@@ -332,12 +332,15 @@ void readModeAndControl() {
     if (modeResponse.startsWith("\"")) {
       modeResponse = modeResponse.substring(1, modeResponse.length() - 1);
     }
-    if (modeResponse == "MANUAL" || modeResponse == "AUTO") {
+    // Convert to lowercase untuk case-insensitive comparison
+    modeResponse.toLowerCase();
+    if (modeResponse == "manual" || modeResponse == "auto") {
       currentMode = modeResponse;
+      Serial.printf("📡 Mode updated: %s\n", currentMode.c_str());
     }
   }
 
-  if (currentMode == "MANUAL") {
+  if (currentMode == "manual") {
     // ======== MANUAL MODE - READ COMMANDS (INSTANT) ========
     readManualCommands();
   } else {
