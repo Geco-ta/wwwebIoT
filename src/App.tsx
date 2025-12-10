@@ -140,12 +140,13 @@ export default function App() {
 			const unsubscribe = subscribeSensorTimeSeries(
 				key,
 				(points) => {
-					// Direct update untuk chart data
+					// Jika Firebase kosong tapi ada dummy data, keep dummy data
+					// Jika ada data dari Firebase, gunakan itu
 					setState(prev => ({
 						...prev,
 						series: {
 							...prev.series,
-							[key]: points
+							[key]: points.length > 0 ? points : prev.series[key]
 						}
 					}));
 				},

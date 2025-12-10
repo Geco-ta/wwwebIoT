@@ -83,12 +83,17 @@ export function subscribeSensorTimeSeries(
 					const now = Date.now();
 					const twelveHoursAgo = now - 12 * 60 * 60 * 1000;
 					const filteredPoints = (allPoints as Array<{ timestamp: number; value: number }>)
-						.filter(p => p.timestamp >= twelveHoursAgo)
+						.filter(p => p && p.timestamp && p.timestamp >= twelveHoursAgo)
 						.sort((a, b) => a.timestamp - b.timestamp);
 					
 					// Hanya kirim update jika ada perubahan data
 					debounce(`series-${sensorKey}`, () => {
-						onUpdate(filteredPoints);
+						onUpdate(filteredPoints.length > 0 ? filteredPoints : []);
+					});
+				} else {
+					// Jika tidak ada data di Firebase, kirim empty array
+					debounce(`series-${sensorKey}`, () => {
+						onUpdate([]);
 					});
 				}
 			},
