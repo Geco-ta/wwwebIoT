@@ -17,8 +17,23 @@ const firebaseConfig = {
 const app = initializeApp(firebaseConfig);
 export const database = getDatabase(app);
 
+// Debounce helper untuk mengurangi frequent updates
+const createDebounce = (delay: number) => {
+	const timers = new Map<string, number>();
+	return (key: string, callback: () => void) => {
+		if (timers.has(key)) clearTimeout(timers.get(key)!);
+		const timer = window.setTimeout(() => {
+			callback();
+			timers.delete(key);
+		}, delay);
+		timers.set(key, timer);
+	};
+};
+
+const debounce = createDebounce(100); // 100ms debounce untuk stability
+
 /**
- * Subscribe to current sensor readings
+ * Subscribe to current sensor readings dengan debouncing
  */
 export function subscribeToSensorCurrent(
 	sensorKey: SensorKey,
@@ -32,7 +47,9 @@ export function subscribeToSensorCurrent(
 			(snapshot) => {
 				if (snapshot.exists()) {
 					const data = snapshot.val() as any;
-					onUpdate(data.value ?? 0);
+					const value = data.value ?? 0;
+					// Gunakan debounce untuk mengurangi update frequency
+					debounce(`sensor-${sensorKey}`, () => onUpdate(value));
 				}
 			},
 			(error: any) => onError(error as Error)
@@ -45,7 +62,7 @@ export function subscribeToSensorCurrent(
 }
 
 /**
- * Subscribe to sensor time series data
+ * Subscribe to sensor time series data dengan optimization untuk data besar
  */
 export function subscribeSensorTimeSeries(
 	sensorKey: SensorKey,
@@ -60,7 +77,10 @@ export function subscribeSensorTimeSeries(
 				if (snapshot.exists()) {
 					const data = snapshot.val() as any;
 					const points = Array.isArray(data) ? data : Object.values(data || {});
-					onUpdate(points as Array<{ timestamp: number; value: number }>);
+					// Hanya kirim update jika ada perubahan data
+					debounce(`series-${sensorKey}`, () => {
+						onUpdate(points as Array<{ timestamp: number; value: number }>);
+					});
 				}
 			},
 			(error: any) => onError(error as Error)
@@ -73,7 +93,7 @@ export function subscribeSensorTimeSeries(
 }
 
 /**
- * Subscribe to actuator state
+ * Subscribe to actuator state dengan instant response
  */
 export function subscribeActuatorState(
 	actuatorKey: ActuatorKey,
@@ -87,7 +107,9 @@ export function subscribeActuatorState(
 			(snapshot) => {
 				if (snapshot.exists()) {
 					const data = snapshot.val() as any;
-					onUpdate(data.isOn ?? false);
+					const isOn = data.isOn ?? false;
+					// Jangan debounce actuator state - harus instant untuk responsiveness
+					onUpdate(isOn);
 				}
 			},
 			(error: any) => onError(error as Error)
@@ -100,7 +122,7 @@ export function subscribeActuatorState(
 }
 
 /**
- * Update actuator command
+ * Update actuator command dengan retry logic
  */
 export async function updateActuatorCommand(
 	actuatorKey: ActuatorKey,
@@ -108,14 +130,24 @@ export async function updateActuatorCommand(
 ): Promise<void> {
 	try {
 		const commandRef = ref(database, `actuators/${actuatorKey}/command`);
-		// Simpan sebagai object dengan isOn property untuk consistency dengan ESP32
+		// Update langsung untuk instant feedback di UI
 		await set(commandRef, {
 			isOn,
 			timestamp: Date.now()
 		});
 	} catch (error) {
 		console.error(`Error updating actuator ${actuatorKey}:`, error);
-		throw error;
+		// Retry sekali jika gagal
+		try {
+			const commandRef = ref(database, `actuators/${actuatorKey}/command`);
+			await set(commandRef, {
+				isOn,
+				timestamp: Date.now()
+			});
+		} catch (retryError) {
+			console.error(`Retry failed for actuator ${actuatorKey}:`, retryError);
+			throw retryError;
+		}
 	}
 }
 

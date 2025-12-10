@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import { SENSOR_META } from '../data';
 import { SensorKey } from '../types';
 
@@ -6,7 +7,7 @@ interface Props {
 	value: number;
 }
 
-export default function SensorCard({ sensor, value }: Props) {
+const SensorCard = memo(function SensorCard({ sensor, value }: Props) {
 	const meta = SENSOR_META[sensor];
 	return (
 		<div className="card sensor-card">
@@ -36,5 +37,7 @@ export default function SensorCard({ sensor, value }: Props) {
 			</div>
 		</div>
 	);
-}
+});
+
+export default SensorCard;
 

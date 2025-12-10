@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import SensorCard from './components/SensorCard';
 import TimeSeriesChart from './components/TimeSeriesChart';
 import ActuatorPanel from './components/ActuatorPanel';
@@ -22,6 +22,45 @@ export default function App() {
 	const timerRef = useRef<number | null>(null);
 	const unsubscribesRef = useRef<(() => void)[]>([]);
 	const { theme, toggleTheme } = useTheme();
+	const stateUpdateQueueRef = useRef<Map<string, any>>(new Map());
+	const batchTimerRef = useRef<number | null>(null);
+
+	// Batch state updates untuk mengurangi re-render
+	const scheduleBatchUpdate = useCallback(() => {
+		if (batchTimerRef.current) clearTimeout(batchTimerRef.current);
+		batchTimerRef.current = window.setTimeout(() => {
+			const updates = Object.fromEntries(stateUpdateQueueRef.current);
+			if (Object.keys(updates).length > 0) {
+				setState(prev => ({ ...prev, ...updates }));
+				stateUpdateQueueRef.current.clear();
+			}
+		}, 50); // Batch updates dalam 50ms window
+	}, []);
+
+	const enqueueSensorUpdate = useCallback((key: SensorKey, value: number) => {
+		stateUpdateQueueRef.current.set(`current.${key}`, { 
+			...((stateUpdateQueueRef.current.get('current') as any) || {}), 
+			[key]: value 
+		});
+		scheduleBatchUpdate();
+	}, [scheduleBatchUpdate]);
+
+	const enqueueSeriesUpdate = useCallback((key: SensorKey, points: any[]) => {
+		stateUpdateQueueRef.current.set(`series.${key}`, { 
+			...((stateUpdateQueueRef.current.get('series') as any) || {}), 
+			[key]: points 
+		});
+		scheduleBatchUpdate();
+	}, [scheduleBatchUpdate]);
+
+	const enqueueActuatorUpdate = useCallback((key: ActuatorKey, isOn: boolean) => {
+		const actuators = (stateUpdateQueueRef.current.get('actuators') as any) || state.actuators;
+		stateUpdateQueueRef.current.set('actuators', {
+			...actuators,
+			[key]: { ...actuators[key], isOn }
+		});
+		scheduleBatchUpdate();
+	}, [scheduleBatchUpdate, state.actuators]);
 
 	// Subscribe to Firebase realtime data
 	useEffect(() => {
@@ -32,10 +71,11 @@ export default function App() {
 			}, 5_000);
 			return () => {
 				if (timerRef.current) window.clearInterval(timerRef.current);
+				if (batchTimerRef.current) window.clearTimeout(batchTimerRef.current);
 			};
 		}
 
-		// Firebase mode - subscribe to real data
+		// Firebase mode - subscribe to real data dengan batching
 		const sensorKeys: SensorKey[] = ['light', 'airHumidity', 'soilMoisture', 'airTemp'];
 
 		const handleError = (error: Error) => {
@@ -47,6 +87,7 @@ export default function App() {
 			const unsubscribe = subscribeToSensorCurrent(
 				key,
 				(value) => {
+					// Direct update untuk responsiveness (batching hanya untuk multiple updates)
 					setState(prev => ({
 						...prev,
 						current: { ...prev.current, [key]: value }
@@ -62,6 +103,7 @@ export default function App() {
 			const unsubscribe = subscribeSensorTimeSeries(
 				key,
 				(points) => {
+					// Direct update untuk chart data
 					setState(prev => ({
 						...prev,
 						series: {
@@ -105,6 +147,7 @@ export default function App() {
 		return () => {
 			unsubscribesRef.current.forEach(unsub => unsub());
 			unsubscribesRef.current = [];
+			if (batchTimerRef.current) window.clearTimeout(batchTimerRef.current);
 		};
 	}, []);
 
@@ -131,7 +174,7 @@ export default function App() {
 		];
 	}, [state.series]);
 
-	const setMode = async (mode: 'auto' | 'manual') => {
+	const setMode = useCallback(async (mode: 'auto' | 'manual') => {
 		setState(prev => ({ ...prev, mode }));
 		if (USE_FIREBASE) {
 			try {
@@ -140,20 +183,23 @@ export default function App() {
 				console.error('Failed to update mode:', error);
 			}
 		}
-	};
+	}, []);
 
-	const setActuator = async (key: ActuatorKey, on: boolean) => {
+	const setActuator = useCallback(async (key: ActuatorKey, on: boolean) => {
+		// Update UI instantly untuk better UX
 		setState(prev => ({ ...prev, actuators: { ...prev.actuators, [key]: { ...prev.actuators[key], isOn: on } } }));
 		if (USE_FIREBASE) {
 			try {
 				await updateActuatorCommand(key, on);
 			} catch (error) {
 				console.error('Failed to update actuator:', error);
+				// Revert jika gagal
+				setState(prev => ({ ...prev, actuators: { ...prev.actuators, [key]: { ...prev.actuators[key], isOn: !on } } }));
 			}
 		}
-	};
+	}, []);
 
-	const setAllActuators = async (on: boolean) => {
+	const setAllActuators = useCallback(async (on: boolean) => {
 		const next = { ...state.actuators };
 		(['lamp', 'fan', 'pump'] as ActuatorKey[]).forEach(k => next[k] = { ...next[k], isOn: on });
 		setState(prev => ({ ...prev, actuators: next }));
@@ -169,7 +215,7 @@ export default function App() {
 				console.error('Failed to update actuators:', error);
 			}
 		}
-	};
+	}, [state.actuators]);
 
 	return (
 		<>

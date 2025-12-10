@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react';
 import { format } from 'date-fns';
 import {
 	ResponsiveContainer,
@@ -39,31 +40,40 @@ function CustomTooltip({ active, payload, label }: any) {
 	);
 }
 
-export default function TimeSeriesChart({ title, series }: Props) {
-	// Merge by timestamp for multi-line chart
-	const allTs = series[0]?.points.map(p => p.timestamp) ?? [];
-	const data = allTs.map(ts => {
-		const row: any = { ts };
-		series.forEach(s => {
-			const p = s.points.find(pt => pt.timestamp === ts);
-			if (p) row[s.key] = p.value;
+const TimeSeriesChart = memo(function TimeSeriesChart({ title, series }: Props) {
+	// Memoize data transformation untuk menghindari perhitungan ulang
+	const chartData = useMemo(() => {
+		const allTs = series[0]?.points.map(p => p.timestamp) ?? [];
+		const data = allTs.map(ts => {
+			const row: any = { ts };
+			series.forEach(s => {
+				const p = s.points.find(pt => pt.timestamp === ts);
+				if (p) row[s.key] = p.value;
+			});
+			return row;
 		});
-		return row;
-	});
+		return { data, allTs };
+	}, [series]);
 
-	// Hitung waktu mulai dari data pertama di database
-	const minTimestamp = allTs.length > 0 ? Math.min(...allTs) : Date.now();
-	const start = minTimestamp;
-	const end = start + 12 * 60 * 60 * 1000; // 12 jam dari data pertama
-	
-	// Buat array referensi garis untuk setiap jam
-	const hourlyLines = Array.from({ length: 13 }, (_, i) => start + i * 60 * 60 * 1000);
+	// Memoize hourly lines calculation
+	const { hourlyLines, start, end } = useMemo(() => {
+		const allTs = chartData.allTs;
+		const minTimestamp = allTs.length > 0 ? Math.min(...allTs) : Date.now();
+		const start = minTimestamp;
+		const end = start + 12 * 60 * 60 * 1000;
+		const hourlyLines = Array.from({ length: 13 }, (_, i) => start + i * 60 * 60 * 1000);
+		return { hourlyLines, start, end };
+	}, [chartData.allTs]);
 
-	// Deteksi light mode
-	const isLightMode = typeof document !== 'undefined' && document.body.classList.contains('light-mode');
-	const gridColor = isLightMode ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)';
-	const axisColor = isLightMode ? 'rgba(51,65,85,0.3)' : 'rgba(148,163,184,0.3)';
-	const refLineColor = isLightMode ? 'rgba(0,0,0,0.08)' : 'rgba(148,163,184,0.1)';
+	// Memoize color detection
+	const { gridColor, axisColor, refLineColor } = useMemo(() => {
+		const isLightMode = typeof document !== 'undefined' && document.body.classList.contains('light-mode');
+		return {
+			gridColor: isLightMode ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.08)',
+			axisColor: isLightMode ? 'rgba(51,65,85,0.3)' : 'rgba(148,163,184,0.3)',
+			refLineColor: isLightMode ? 'rgba(0,0,0,0.08)' : 'rgba(148,163,184,0.1)'
+		};
+	}, []);
 
 	return (
 		<div className="card charts">
@@ -77,7 +87,7 @@ export default function TimeSeriesChart({ title, series }: Props) {
 			</div>
 			<div style={{ width: '100%', height: 360 }}>
 				<ResponsiveContainer>
-					<LineChart data={data} margin={{ top: 8, right: 16, left: -20, bottom: 8 }}>
+					<LineChart data={chartData.data} margin={{ top: 8, right: 16, left: -20, bottom: 8 }}>
 						<CartesianGrid stroke={gridColor} vertical={false} />
 						<XAxis
 							dataKey="ts"
@@ -123,4 +133,6 @@ export default function TimeSeriesChart({ title, series }: Props) {
 			<div className="subtitle" style={{ marginTop: 12, marginBottom: 0 }}>12 jam dari data pertama • Per menit</div>
 		</div>
 	);
-}
+});
+
+export default TimeSeriesChart;
